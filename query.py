@@ -29,7 +29,26 @@ except ImportError:
 BASE_DIR   = pathlib.Path(__file__).parent.resolve()
 PDF_PATH   = BASE_DIR / "BMW - E36 - 3 Series Service Manual (1992 - 1998) EN.pdf"
 INDEX_PATH = BASE_DIR / "index.json"
+TAGS_PATH  = BASE_DIR / "tags.json"
 TOP_K      = 10
+TAG_BOOST  = 5.0   # weight added per unit of tag score on top of BM25
+
+
+def load_tags() -> dict:
+    if not TAGS_PATH.exists():
+        return {}
+    with open(TAGS_PATH, encoding="utf-8") as f:
+        return json.load(f)
+
+
+def compute_tag_score(page_tags: list, query_tokens: list) -> float:
+    """Sum weights of tags that contain any query token as a substring."""
+    score = 0.0
+    for entry in page_tags:
+        tag_text = entry["tag"].lower()
+        if any(token in tag_text for token in query_tokens):
+            score += entry["weight"]
+    return score
 
 
 # ── Phase 2 LLM hook ──────────────────────────────────────────────────────────
@@ -462,6 +481,7 @@ def main():
     with open(INDEX_PATH, encoding="utf-8") as f:
         data = json.load(f)
     records = data["records"]
+    tags    = load_tags()
 
     corpus       = [tokenize(r["text"]) for r in records]
     bm25         = BM25Okapi(corpus)
@@ -470,9 +490,16 @@ def main():
     if not query_tokens:
         sys.exit("ERROR: query is empty after tokenization.")
 
-    scores = bm25.get_scores(query_tokens)
-    ranked = sorted(range(len(scores)), key=lambda i: scores[i], reverse=True)
-    ranked = [i for i in ranked if scores[i] > 0][: args.top]
+    bm25_scores = bm25.get_scores(query_tokens)
+    final_scores = [
+        float(bm25_scores[i]) + TAG_BOOST * compute_tag_score(
+            tags.get(str(records[i]["page"]), []), query_tokens
+        )
+        for i in range(len(records))
+    ]
+
+    ranked = sorted(range(len(final_scores)), key=lambda i: final_scores[i], reverse=True)
+    ranked = [i for i in ranked if final_scores[i] > 0][: args.top]
 
     if not ranked:
         print(f'\nNo results found for "{args.query}".')
@@ -485,7 +512,7 @@ def main():
     result_records = []
     for idx in ranked:
         r       = records[idx]
-        score   = float(scores[idx])
+        score   = final_scores[idx]
         excerpt = make_excerpt(r["text"], query_tokens, window=300)
         print(sep)
         print(f"Page {r['page']:>4}  [score: {score:.2f}]")

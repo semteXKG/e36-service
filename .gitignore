@@ -1,5 +1,7 @@
-# Generated index and page images
+# Generated index, tags, and page images
 index.json
+tags.json
+tags_batch_*.json
 pages/
 
 # PDF (large binary, not redistributable)

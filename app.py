@@ -23,10 +23,11 @@ try:
 except ImportError:
     sys.exit("ERROR: rank-bm25 not installed.\nRun: pip install rank-bm25")
 
-from query import tokenize, make_excerpt, highlight, CSS
+from query import tokenize, make_excerpt, highlight, CSS, compute_tag_score, TAG_BOOST
 
 BASE_DIR   = pathlib.Path(__file__).parent.resolve()
 INDEX_PATH = BASE_DIR / "index.json"
+TAGS_PATH  = BASE_DIR / "tags.json"
 PDF_PATH   = BASE_DIR / "BMW - E36 - 3 Series Service Manual (1992 - 1998) EN.pdf"
 DEFAULT_TOP = 10
 
@@ -42,6 +43,12 @@ _records = _data["records"]
 _corpus  = [tokenize(r["text"]) for r in _records]
 _bm25    = BM25Okapi(_corpus)
 print(f"done ({len(_records)} pages indexed)")
+
+_tags = {}
+if TAGS_PATH.exists():
+    with open(TAGS_PATH, encoding="utf-8") as f:
+        _tags = json.load(f)
+    print(f"Tags loaded ({len(_tags)} pages)")
 
 # ── HTML page ─────────────────────────────────────────────────────────────────
 
@@ -227,15 +234,21 @@ def search():
     if not query_tokens:
         return jsonify({"query": q, "results": [], "total": 0})
 
-    scores = _bm25.get_scores(query_tokens)
-    ranked = sorted(range(len(scores)), key=lambda i: scores[i], reverse=True)
-    ranked = [i for i in ranked if scores[i] > 0][:top]
+    bm25_scores   = _bm25.get_scores(query_tokens)
+    final_scores  = [
+        float(bm25_scores[i]) + TAG_BOOST * compute_tag_score(
+            _tags.get(str(_records[i]["page"]), []), query_tokens
+        )
+        for i in range(len(_records))
+    ]
+    ranked = sorted(range(len(final_scores)), key=lambda i: final_scores[i], reverse=True)
+    ranked = [i for i in ranked if final_scores[i] > 0][:top]
 
-    max_score = float(scores[ranked[0]]) if ranked else 1.0
+    max_score = final_scores[ranked[0]] if ranked else 1.0
     results   = []
     for idx in ranked:
         r     = _records[idx]
-        score = float(scores[idx])
+        score = final_scores[idx]
         excerpt_raw  = make_excerpt(r["text"], query_tokens)
         excerpt_esc  = html_lib.escape(excerpt_raw)
         excerpt_html = highlight(excerpt_esc, [html_lib.escape(t) for t in query_tokens])

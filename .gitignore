@@ -1,0 +1,20 @@
+# Generated index and page images
+index.json
+pages/
+
+# PDF (large binary, not redistributable)
+*.pdf
+
+# Ephemeral output
+results.html
+app_log.txt
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+
+# Claude Code
+.claude/

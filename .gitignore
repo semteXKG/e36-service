@@ -18,5 +18,8 @@ __pycache__/
 .venv/
 venv/
 
+# Secrets
+.env
+
 # Claude Code
 .claude/

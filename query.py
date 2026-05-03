@@ -6,7 +6,7 @@ Usage:
     python query.py "brake bleeding"
     python query.py "torque spec cylinder head" --top 15
     python query.py "cooling system" --no-browser
-    python query.py "oil change" --llm        # Phase 2: requires anthropic + API key
+    python query.py "oil change" --llm        # Phase 2: requires openai + MOONSHOT_API_KEY
 """
 
 import argparse
@@ -17,6 +17,12 @@ import pathlib
 import re
 import sys
 import webbrowser
+
+try:
+    from dotenv import load_dotenv
+    load_dotenv(pathlib.Path(__file__).parent / ".env")
+except ImportError:
+    pass
 
 try:
     from rank_bm25 import BM25Okapi
@@ -42,66 +48,120 @@ def load_tags() -> dict:
 
 
 def compute_tag_score(page_tags: list, query_tokens: list) -> float:
-    """Sum weights of tags that contain any query token as a substring."""
+    """
+    Score tags against query tokens. A tag matching ALL tokens gets full weight;
+    partial matches are scaled by (matched/total)^2, heavily discounting pages
+    where only one token of a multi-word query appears in their tags.
+    """
+    if not query_tokens:
+        return 0.0
+    n = len(query_tokens)
     score = 0.0
     for entry in page_tags:
         tag_text = entry["tag"].lower()
-        if any(token in tag_text for token in query_tokens):
-            score += entry["weight"]
+        matched = sum(1 for t in query_tokens if t in tag_text)
+        if matched == 0:
+            continue
+        score += entry["weight"] * (matched / n) ** 2
     return score
+
+
+PHRASE_BONUS = 4.0   # added when all query tokens appear as a phrase in the OCR text
+
+def compute_phrase_bonus(text: str, query_tokens: list) -> float:
+    """Return PHRASE_BONUS if the full query phrase appears verbatim in the text."""
+    if len(query_tokens) < 2:
+        return 0.0
+    phrase = " ".join(query_tokens)
+    return PHRASE_BONUS if phrase in text.lower() else 0.0
+
+
+def deduplicate_by_chapter(results: list, tags: dict, gap: int = 3) -> list:
+    """
+    Group consecutive results that share the same primary section tag.
+    Returns the first page (lowest number) of each group, scored by the
+    group's maximum score. Fetch 3x top-k before calling this.
+    """
+    if not results:
+        return results
+
+    def primary_tag(page_num):
+        page_tags = tags.get(str(page_num), [])
+        if not page_tags:
+            return None
+        best = max(page_tags, key=lambda t: t["weight"])
+        return best["tag"] if best["weight"] >= 0.8 else None
+
+    by_page  = sorted(results, key=lambda r: r["page"])
+    groups   = []
+    group    = [by_page[0]]
+
+    for r in by_page[1:]:
+        prev = group[-1]
+        if (r["page"] - prev["page"] <= gap and
+                primary_tag(r["page"]) == primary_tag(prev["page"])):
+            group.append(r)
+        else:
+            groups.append(group)
+            group = [r]
+    groups.append(group)
+
+    deduped = []
+    for g in groups:
+        best = max(g, key=lambda r: r["score"])
+        deduped.append(best)
+
+    return sorted(deduped, key=lambda r: r["score"], reverse=True)
 
 
 # ── Phase 2 LLM hook ──────────────────────────────────────────────────────────
 
 def llm_answer(query: str, top_records: list, base_dir: pathlib.Path) -> str:
     """
-    Phase 2 entry point. Send top-k page images to Claude API for a synthesized answer.
+    Send top-5 pages (OCR text) to moonshot.ai (Kimi) for a synthesized answer.
     To enable:
-        pip install anthropic
-        set ANTHROPIC_API_KEY=sk-ant-...
+        pip install openai
+        set MOONSHOT_API_KEY=sk-...
         python query.py "your question" --llm
     """
     try:
-        import anthropic
-        import base64
+        from openai import OpenAI
     except ImportError:
-        return "ERROR: anthropic package not installed. Run: pip install anthropic"
+        return "ERROR: openai package not installed. Run: pip install openai"
 
-    api_key = os.environ.get("ANTHROPIC_API_KEY")
+    api_key  = os.environ.get("LLM_API_KEY") or os.environ.get("MOONSHOT_API_KEY")
+    base_url = os.environ.get("LLM_BASE_URL", "https://api.moonshot.ai/v1")
+    model    = os.environ.get("LLM_MODEL",    "kimi-k2.6")
+
     if not api_key:
-        return "ERROR: ANTHROPIC_API_KEY environment variable not set."
+        return "ERROR: LLM_API_KEY environment variable not set."
 
-    client  = anthropic.Anthropic(api_key=api_key)
-    content = []
+    client = OpenAI(api_key=api_key, base_url=base_url)
 
+    context_parts = []
     for r in top_records[:5]:
-        img_path = base_dir / r["img_path"]
-        if img_path.exists():
-            with open(img_path, "rb") as f:
-                b64 = base64.standard_b64encode(f.read()).decode()
-            content.append({
-                "type": "image",
-                "source": {"type": "base64", "media_type": "image/png", "data": b64},
-            })
-            content.append({
-                "type": "text",
-                "text": f"[Page {r['page']} of the BMW E36 3 Series service manual]",
-            })
+        text = clean_text(r["text"])
+        if text:
+            context_parts.append(f"[Page {r['page']}]\n{text}")
 
-    content.append({
-        "type": "text",
-        "text": (
-            f"Using the BMW E36 service manual pages shown above, answer this question "
-            f"as specifically as possible and cite page numbers:\n\n{query}"
-        ),
-    })
+    context = "\n\n---\n\n".join(context_parts)
 
-    response = client.messages.create(
-        model="claude-sonnet-4-6",
-        max_tokens=1024,
-        messages=[{"role": "user", "content": content}],
+    prompt = (
+        "You are a BMW E36 service manual assistant. "
+        "Answer the question using only the provided manual excerpts. "
+        "Format your response in Markdown: use **bold** for critical values (torque specs, fluid types, part numbers, temperatures), "
+        "and numbered lists for procedures. "
+        "Cite page numbers in your answer (e.g. Page 73).\n\n"
+        f"{context}\n\n"
+        f"Question: {query}"
     )
-    return response.content[0].text
+
+    response = client.chat.completions.create(
+        model=model,
+        max_tokens=1024,
+        messages=[{"role": "user", "content": prompt}],
+    )
+    return response.choices[0].message.content
 
 
 # ── Tokenizer ─────────────────────────────────────────────────────────────────
@@ -112,22 +172,54 @@ def tokenize(text: str) -> list:
     return text.split()
 
 
+def clean_text(text: str) -> str:
+    """Remove OCR watermarks and common artifacts from page text."""
+    # Watermark
+    text = re.sub(r'Versi[oó]n electr[oó]nica licenciada[^\n]*', '', text, flags=re.IGNORECASE)
+    text = re.sub(r'Buenos Aires\s*//\s*Argentina', '', text, flags=re.IGNORECASE)
+    text = re.sub(r'\S+@\S+\.\S+', '', text)
+    text = re.sub(r'tel:\s*[\d\s\(\)\-\+]+', '', text, flags=re.IGNORECASE)
+    # Long runs of repeated punctuation (dividers, dot leaders, etc.)
+    text = re.sub(r'[~=]{4,}', ' ', text)
+    text = re.sub(r'_{4,}', ' ', text)
+    text = re.sub(r'\.{5,}', ' ', text)
+    text = re.sub(r'\|{2,}', ' ', text)
+    text = re.sub(r'([A-Z])\1{2,}', ' ', text)
+    # Unicode garbage
+    text = text.replace('�', ' ')
+    # Repeated short OCR noise tokens
+    text = re.sub(r'\b(\w{1,2})\s+\1\b', ' ', text)
+    text = re.sub(r'(\b[a-zA-Z]{1,2}\b\s+){4,}', ' ', text)
+    # Stray symbols
+    text = re.sub(r'(?<!\w)[~|\\{}]+(?!\w)', ' ', text)
+    text = re.sub(r'(\s*/\s*)+', ' ', text)
+    text = re.sub(r'\s{2,}', ' ', text)
+    return text.strip()
+
+
 # ── Excerpt ───────────────────────────────────────────────────────────────────
 
 def make_excerpt(text: str, query_tokens: list, window: int = 400) -> str:
+    text     = clean_text(text)
     lower    = text.lower()
     best_pos = len(text)
-    for tok in query_tokens:
-        p = lower.find(tok)
-        if 0 <= p < best_pos:
-            best_pos = p
+    # Prefer position of the full phrase over individual tokens
+    phrase = " ".join(query_tokens)
+    p = lower.find(phrase)
+    if p >= 0:
+        best_pos = p
+    else:
+        for tok in query_tokens:
+            p = lower.find(tok)
+            if 0 <= p < best_pos:
+                best_pos = p
     start   = max(0, best_pos - window // 3)
     end     = min(len(text), start + window)
     snippet = text[start:end]
     if start > 0:
-        snippet = "…" + snippet
+        snippet = "..." + snippet
     if end < len(text):
-        snippet = snippet + "…"
+        snippet = snippet + "..."
     return snippet
 
 
@@ -390,7 +482,7 @@ def build_html(query_str: str, results: list, query_tokens: list, llm_text: str 
     if llm_text:
         llm_section = f"""
     <div class="llm-box">
-      <h2>Claude API Answer</h2>
+      <h2>Kimi AI Answer</h2>
       <p>{html_lib.escape(llm_text).replace(chr(10), "<br>")}</p>
     </div>"""
 
@@ -467,7 +559,7 @@ def main():
     ap.add_argument("--no-browser",       action="store_true",
                     help="Do not open results.html automatically")
     ap.add_argument("--llm",              action="store_true",
-                    help="(Phase 2) Send top pages to Claude API for a synthesized answer")
+                    help="(Phase 2) Send top pages to Kimi API for a synthesized answer (needs MOONSHOT_API_KEY)")
     args = ap.parse_args()
 
     if not INDEX_PATH.exists():
@@ -491,42 +583,41 @@ def main():
         sys.exit("ERROR: query is empty after tokenization.")
 
     bm25_scores = bm25.get_scores(query_tokens)
-    final_scores = [
-        float(bm25_scores[i]) + TAG_BOOST * compute_tag_score(
-            tags.get(str(records[i]["page"]), []), query_tokens
-        )
-        for i in range(len(records))
-    ]
+    final_scores = []
+    for i, r in enumerate(records):
+        page_tags    = tags.get(str(r["page"]), [])
+        tag_score    = compute_tag_score(page_tags, query_tokens)
+        phrase_bonus = compute_phrase_bonus(r["text"], query_tokens)
+        final_scores.append(float(bm25_scores[i]) + TAG_BOOST * tag_score + phrase_bonus)
 
-    ranked = sorted(range(len(final_scores)), key=lambda i: final_scores[i], reverse=True)
-    ranked = [i for i in ranked if final_scores[i] > 0][: args.top]
+    ranked_all = sorted(range(len(final_scores)), key=lambda i: final_scores[i], reverse=True)
+    ranked_all = [i for i in ranked_all if final_scores[i] > 0][: args.top * 3]
 
-    if not ranked:
+    if not ranked_all:
         print(f'\nNo results found for "{args.query}".')
         print("Try different keywords, e.g. individual words rather than phrases.")
         sys.exit(0)
 
-    print(f"Found {len(ranked)} matching page(s)\n")
+    pre_dedup      = [{**records[i], "score": final_scores[i]} for i in ranked_all]
+    result_records = deduplicate_by_chapter(pre_dedup, tags)[: args.top]
+
+    print(f"Found {len(result_records)} matching page(s)\n")
     sep = "-" * 60
 
-    result_records = []
-    for idx in ranked:
-        r       = records[idx]
-        score   = final_scores[idx]
+    for r in result_records:
         excerpt = make_excerpt(r["text"], query_tokens, window=300)
         print(sep)
-        print(f"Page {r['page']:>4}  [score: {score:.2f}]")
+        print(f"Page {r['page']:>4}  [score: {r['score']:.2f}]")
         print(excerpt[:300])
-        result_records.append({**r, "score": score})
 
     print(sep)
 
     # Phase 2 LLM
     llm_text = ""
     if args.llm:
-        print("\nQuerying Claude API...")
+        print("\nQuerying Kimi AI...")
         llm_text = llm_answer(args.query, result_records, BASE_DIR)
-        print("\n=== Claude API Answer ===")
+        print("\n=== Kimi AI Answer ===")
         print(llm_text)
         print("=" * 60)
 

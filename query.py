@@ -118,10 +118,11 @@ def deduplicate_by_chapter(results: list, tags: dict, gap: int = 3) -> list:
 
 def llm_answer(query: str, top_records: list, base_dir: pathlib.Path) -> str:
     """
-    Send top-5 pages (OCR text) to moonshot.ai (Kimi) for a synthesized answer.
+    Send top-5 pages (OCR text) to an LLM for a synthesized answer.
+    Provider is configured via .env (LLM_BASE_URL, LLM_API_KEY, LLM_MODEL).
     To enable:
         pip install openai
-        set MOONSHOT_API_KEY=sk-...
+        set LLM_API_KEY=...
         python query.py "your question" --llm
     """
     try:
@@ -130,8 +131,8 @@ def llm_answer(query: str, top_records: list, base_dir: pathlib.Path) -> str:
         return "ERROR: openai package not installed. Run: pip install openai"
 
     api_key  = os.environ.get("LLM_API_KEY") or os.environ.get("MOONSHOT_API_KEY")
-    base_url = os.environ.get("LLM_BASE_URL", "https://api.moonshot.ai/v1")
-    model    = os.environ.get("LLM_MODEL",    "kimi-k2.6")
+    base_url = os.environ.get("LLM_BASE_URL", "https://api.groq.com/openai/v1")
+    model    = os.environ.get("LLM_MODEL",    "llama-3.3-70b-versatile")
 
     if not api_key:
         return "ERROR: LLM_API_KEY environment variable not set."

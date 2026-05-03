@@ -31,7 +31,7 @@ try:
 except ImportError:
     sys.exit("ERROR: rank-bm25 not installed.\nRun: pip install rank-bm25")
 
-from query import tokenize, make_excerpt, highlight, CSS, compute_tag_score, TAG_BOOST, compute_phrase_bonus, deduplicate_by_chapter, llm_answer
+from query import tokenize, make_excerpt, highlight, CSS, compute_tag_score, TAG_BOOST, compute_phrase_bonus, deduplicate_by_chapter
 
 BASE_DIR   = pathlib.Path(__file__).parent.resolve()
 INDEX_PATH = BASE_DIR / "index.json"
@@ -112,7 +112,6 @@ main {
   padding: 8px 0 10px;
   gap: 16px;
   background: #1a1a1a;
-  border-radius: 4px 0 0 4px;
 }
 #viewer-close {
   background: none;
@@ -323,8 +322,14 @@ HTML_PAGE = f"""<!DOCTYPE html>
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>BMW E36 &mdash; Service Manual Search</title>
 <style>{CSS}{_EXTRA_CSS}</style>
-<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/marked@14/marked.min.js"
+        integrity="sha384-lqPzN0kmFw9t2syAMwVPM4VbAyqsz/lPyYWbb2Xt6nSPM0WPNrpSWCUBgdcAdgnC"
+        crossorigin="anonymous"></script>
+<script>
+marked.use({{ walkTokens(token) {{ if (token.type === 'html') {{ token.text = ''; token.raw = ''; }} }} }});
+</script>
 </head>
+<body>
 <div id="left-col">
 <header>
   <div class="logo">
@@ -431,7 +436,6 @@ function openViewer(page, imgPath) {{
   document.getElementById('viewer-page-badge').textContent = 'Page ' + page;
   document.getElementById('viewer-pdf-link').href = '/pdf#page=' + page;
   document.getElementById('viewer-panel').classList.add('open');
-  document.body.classList.add('viewer-open');
   document.querySelectorAll('.card-active').forEach(el => el.classList.remove('card-active'));
   const card = document.querySelector('.card[data-page="' + page + '"]');
   if (card) card.classList.add('card-active');
@@ -441,7 +445,6 @@ function closeViewer() {{
   _viewerPage = null;
   document.getElementById('viewer-panel').classList.remove('open');
   document.getElementById('viewer-frame').src = '';
-  document.body.classList.remove('viewer-open');
   document.querySelectorAll('.card-active').forEach(el => el.classList.remove('card-active'));
 }}
 
@@ -481,7 +484,7 @@ async function askAI() {{
         }} else if (msg.type === 'done') {{
           document.getElementById('llm-title').textContent = 'AI Answer — ' + msg.model;
           metaEl.innerHTML = msg.elapsed + 's'
-            + ' &nbsp;&middot;&nbsp; ~' + msg.completion_tokens + ' tokens'
+            + ' &nbsp;&middot;&nbsp; ~' + msg.chunk_count + ' chunks'
             + ' &nbsp;&middot;&nbsp; pages: ' + msg.pages.join(', ');
         }} else if (msg.type === 'error') {{
           document.getElementById('llm-title').textContent = 'AI Answer';
@@ -521,37 +524,9 @@ def serve_page_image(filename):
 def serve_pdf():
     if not PDF_PATH.exists():
         return "PDF not found", 404
-    return send_file(PDF_PATH, mimetype="application/pdf")
-
-
-@app.route("/llm")
-def llm_route():
-    q = request.args.get("q", "").strip()
-    if not q:
-        return jsonify({"error": "No query provided"})
-
-    query_tokens = tokenize(q)
-    if not query_tokens:
-        return jsonify({"error": "Empty query after tokenization"})
-
-    bm25_scores  = _bm25.get_scores(query_tokens)
-    final_scores = []
-    for i, r in enumerate(_records):
-        page_tags    = _tags.get(str(r["page"]), [])
-        tag_score    = compute_tag_score(page_tags, query_tokens)
-        phrase_bonus = compute_phrase_bonus(r["text"], query_tokens)
-        final_scores.append(float(bm25_scores[i]) + TAG_BOOST * tag_score + phrase_bonus)
-
-    ranked = sorted(range(len(final_scores)), key=lambda i: final_scores[i], reverse=True)
-    ranked = [i for i in ranked if final_scores[i] > 0][:15]
-
-    pre_dedup = [{**_records[i], "score": final_scores[i]} for i in ranked]
-    top5      = deduplicate_by_chapter(pre_dedup, _tags)[:5]
-
-    answer = llm_answer(q, top5, BASE_DIR)
-    if answer.startswith("ERROR:"):
-        return jsonify({"error": answer})
-    return jsonify({"query": q, "answer": answer})
+    resp = send_file(PDF_PATH, mimetype="application/pdf")
+    resp.headers["Cache-Control"] = "public, max-age=86400"
+    return resp
 
 
 def _top_records(q, n=5):
@@ -590,8 +565,8 @@ def llm_stream():
             return
 
         api_key  = os.environ.get("LLM_API_KEY") or os.environ.get("MOONSHOT_API_KEY")
-        base_url = os.environ.get("LLM_BASE_URL", "https://api.moonshot.ai/v1")
-        model    = os.environ.get("LLM_MODEL",    "kimi-k2.6")
+        base_url = os.environ.get("LLM_BASE_URL", "https://api.groq.com/openai/v1")
+        model    = os.environ.get("LLM_MODEL",    "llama-3.3-70b-versatile")
 
         if not api_key:
             yield event({"type": "error", "error": "LLM_API_KEY not set"})
@@ -617,7 +592,7 @@ def llm_stream():
 
         client = OpenAI(api_key=api_key, base_url=base_url)
         t0 = time.time()
-        completion_tokens = 0
+        chunk_count = 0
         try:
             stream = client.chat.completions.create(
                 model=model,
@@ -628,18 +603,18 @@ def llm_stream():
             for chunk in stream:
                 if chunk.choices and chunk.choices[0].delta.content:
                     text = chunk.choices[0].delta.content
-                    completion_tokens += 1
+                    chunk_count += 1
                     yield event({"type": "chunk", "text": text})
         except Exception as e:
             yield event({"type": "error", "error": str(e)})
             return
 
         yield event({
-            "type":              "done",
-            "elapsed":           round(time.time() - t0, 1),
-            "completion_tokens": completion_tokens,
-            "model":             model,
-            "pages":             [r["page"] for r in top5],
+            "type":        "done",
+            "elapsed":     round(time.time() - t0, 1),
+            "chunk_count": chunk_count,
+            "model":       model,
+            "pages":       [r["page"] for r in top5],
         })
 
     return Response(
@@ -657,24 +632,11 @@ def search():
     if not q:
         return jsonify({"query": q, "results": [], "total": 0})
 
-    query_tokens = tokenize(q)
-    if not query_tokens:
+    deduped, query_tokens = _top_records(q, n=top)
+    if not deduped:
         return jsonify({"query": q, "results": [], "total": 0})
 
-    bm25_scores  = _bm25.get_scores(query_tokens)
-    final_scores = []
-    for i, r in enumerate(_records):
-        page_tags    = _tags.get(str(r["page"]), [])
-        tag_score    = compute_tag_score(page_tags, query_tokens)
-        phrase_bonus = compute_phrase_bonus(r["text"], query_tokens)
-        final_scores.append(float(bm25_scores[i]) + TAG_BOOST * tag_score + phrase_bonus)
-    ranked_all = sorted(range(len(final_scores)), key=lambda i: final_scores[i], reverse=True)
-    ranked_all = [i for i in ranked_all if final_scores[i] > 0][:top * 3]
-
-    pre_dedup = [{**_records[i], "score": final_scores[i]} for i in ranked_all]
-    deduped   = deduplicate_by_chapter(pre_dedup, _tags)[:top]
-
-    max_score = deduped[0]["score"] if deduped else 1.0
+    max_score = deduped[0]["score"]
     results   = []
     for r in deduped:
         score = r["score"]

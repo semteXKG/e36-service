@@ -343,12 +343,26 @@ main {
   overflow: hidden;
   transition: box-shadow 0.15s, transform 0.15s;
   border-top: 3px solid transparent;
+  position: relative;
 }
 
 .card:hover {
   box-shadow: 0 4px 16px rgba(0,0,0,0.13);
   transform: translateY(-1px);
   border-top-color: #1C69D4;
+}
+
+/* Invisible overlay that makes the whole card clickable */
+.card-link {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+}
+
+/* Keep inner links above the card overlay */
+.img-links {
+  position: relative;
+  z-index: 2;
 }
 
 /* Left column — thumbnail */
@@ -498,6 +512,7 @@ def build_html(query_str: str, results: list, query_tokens: list, llm_text: str 
 
         cards.append(f"""
         <div class="card">
+          <a class="card-link" href="{pdf_page_uri}" target="_blank" title="Open page {r['page']} in PDF" aria-label="Open page {r['page']} in PDF"></a>
           <div class="card-left">
             <a href="{pdf_page_uri}" target="_blank" title="Open page {r['page']} in PDF">
               <img src="{img_src}" alt="Page {r['page']}" loading="lazy"

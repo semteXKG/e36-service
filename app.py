@@ -95,7 +95,7 @@ main {
   transform: translateX(100%);
   transition: transform 0.28s cubic-bezier(.4,0,.2,1);
   display: flex;
-  flex-direction: row;
+  flex-direction: column;
   z-index: 200;
   background: #fff;
   box-shadow: -4px 0 32px rgba(0,0,0,0.28);
@@ -103,60 +103,100 @@ main {
 #viewer-panel.open {
   transform: translateX(0);
 }
-#viewer-header {
-  width: 28px;
+#viewer-toolbar {
   flex-shrink: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  padding: 8px 0 10px;
-  gap: 16px;
+  height: 44px;
   background: #1a1a1a;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 8px;
+  border-bottom: 1px solid #333;
 }
-#viewer-close {
+.tb-btn {
   background: none;
   border: none;
-  color: #888;
-  font-size: 1.1rem;
+  color: #aaa;
+  font-size: 1rem;
   cursor: pointer;
+  padding: 5px 8px;
+  border-radius: 3px;
   line-height: 1;
-  padding: 3px;
-  border-radius: 2px;
   flex-shrink: 0;
 }
-#viewer-close:hover { color: #fff; background: #444; }
+.tb-btn:hover { color: #fff; background: #333; }
+.tb-btn:disabled { color: #555; cursor: default; }
+#viewer-close { color: #fff; }
+#viewer-close:hover { background: #c0392b !important; }
+.tb-sep {
+  width: 1px;
+  height: 20px;
+  background: #333;
+  margin: 0 4px;
+  flex-shrink: 0;
+}
 #viewer-page-badge {
-  writing-mode: vertical-rl;
-  transform: rotate(180deg);
-  font-size: 0.68rem;
-  font-weight: 700;
-  color: #fff;
-  background: #1C69D4;
-  padding: 8px 4px;
-  border-radius: 3px;
-  letter-spacing: 0.5px;
-  text-transform: uppercase;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #ddd;
+  min-width: 70px;
+  text-align: center;
+  white-space: nowrap;
+}
+#viewer-zoom-label {
+  font-size: 0.75rem;
+  color: #aaa;
+  min-width: 36px;
+  text-align: center;
   white-space: nowrap;
 }
 #viewer-pdf-link {
-  writing-mode: vertical-rl;
-  transform: rotate(180deg);
-  font-size: 0.68rem;
-  color: #7fb3f5;
+  margin-left: auto;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #fff;
+  background: #1C69D4;
   text-decoration: none;
+  padding: 5px 10px;
+  border-radius: 3px;
   white-space: nowrap;
 }
-#viewer-pdf-link:hover { color: #fff; }
+#viewer-pdf-link:hover { background: #1557b0; }
 #viewer-img-wrap {
   flex: 1;
   overflow: hidden;
   min-width: 0;
+  position: relative;
 }
-#viewer-img-wrap iframe {
+#viewer-canvas-wrap {
   width: 100%;
   height: 100%;
-  border: none;
-  display: block;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  background: #525659;
+  position: relative;
+}
+.pdf-page {
+  flex-shrink: 0;
+  margin: 6px 0;
+  background: #fff;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+}
+.pdf-page canvas { display: block; }
+#viewer-loading {
+  display: none;
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%,-50%);
+  color: #fff;
+  font-size: 0.85rem;
+  background: rgba(0,0,0,0.55);
+  padding: 6px 16px;
+  border-radius: 4px;
+  pointer-events: none;
 }
 
 /* Thumbnail — clickable div replacing anchor */
@@ -313,6 +353,49 @@ main {
 .tag-high   { background: #1C69D4; color: #fff; }
 .tag-mid    { background: #e8f0fc; color: #1C69D4; border-color: #b8cef5; }
 .tag-low    { background: #f2f2f2; color: #888;    border-color: #ddd; }
+
+@media (max-width: 640px) {
+  header {
+    height: auto;
+    padding: 10px 14px;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .logo h1 { font-size: 0.85rem; }
+  .search-wrap {
+    width: 100%;
+    max-width: none;
+    margin-left: 0;
+    flex: none;
+  }
+  .search-wrap input[type=search] {
+    font-size: 1rem;
+    padding: 10px 14px;
+  }
+  #ask-btn {
+    font-size: 0.85rem;
+    padding: 10px 14px;
+  }
+  main { padding: 14px 12px; }
+  .card-right { padding: 12px 14px; }
+  .score-label, .score-bar-wrap { display: none; }
+  .empty-state { padding: 32px 0; }
+
+  /* PDF link above image on mobile */
+  .thumb-wrap { order: 1; }
+  .img-links  { order: 0; margin-bottom: 4px; }
+
+  /* Alternating card colors — one solid tone per card */
+  .card {
+    border-top: 3px solid #1C69D4;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.13);
+  }
+  .card:nth-child(odd)  { background: #eef1f8; }
+  .card:nth-child(even) { background: #dde3f0; }
+  .card-left  { background: transparent; border-bottom: 1px solid rgba(0,0,0,0.08); }
+  .card-right { background: transparent; }
+  .excerpt    { background: rgba(0,0,0,0.04); border-left-color: rgba(0,0,0,0.12); }
+}
 """
 
 HTML_PAGE = f"""<!DOCTYPE html>
@@ -327,6 +410,11 @@ HTML_PAGE = f"""<!DOCTYPE html>
         crossorigin="anonymous"></script>
 <script>
 marked.use({{ walkTokens(token) {{ if (token.type === 'html') {{ token.text = ''; token.raw = ''; }} }} }});
+</script>
+<script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js"></script>
+<script>
+pdfjsLib.GlobalWorkerOptions.workerSrc =
+  'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
 </script>
 </head>
 <body>
@@ -350,13 +438,23 @@ marked.use({{ walkTokens(token) {{ if (token.type === 'html') {{ token.text = ''
 </main>
 </div>
 <div id="viewer-panel">
-  <div id="viewer-header">
-    <button id="viewer-close" onclick="closeViewer()" title="Close (Esc)">&times;</button>
-    <span id="viewer-page-badge">Page —</span>
-    <a id="viewer-pdf-link" href="#" target="_blank">PDF &#8599;</a>
+  <div id="viewer-toolbar">
+    <button class="tb-btn" id="viewer-close" onclick="closeViewer()" title="Close (Esc)">&#10005;</button>
+    <div class="tb-sep"></div>
+    <button class="tb-btn" id="btn-prev" onclick="prevPage()" title="Previous page (&#8592;)">&#9664;</button>
+    <span id="viewer-page-badge">— / —</span>
+    <button class="tb-btn" id="btn-next" onclick="nextPage()" title="Next page (&#8594;)">&#9654;</button>
+    <div class="tb-sep"></div>
+    <button class="tb-btn" onclick="zoomOut()" title="Zoom out">&#8722;</button>
+    <span id="viewer-zoom-label">fit</span>
+    <button class="tb-btn" onclick="zoomIn()" title="Zoom in">&#43;</button>
+    <button class="tb-btn" onclick="zoomFit()" title="Reset to fit">&#8596;</button>
+    <button class="tb-btn" id="btn-fs" onclick="toggleFullscreen()" title="Fullscreen (F)">&#x26F6;</button>
+    <a id="viewer-pdf-link" href="#" target="_blank" title="Open PDF">PDF &#8599;</a>
   </div>
   <div id="viewer-img-wrap">
-    <iframe id="viewer-frame" src="" title="Manual page"></iframe>
+    <div id="viewer-canvas-wrap"></div>
+    <div id="viewer-loading">Loading…</div>
   </div>
 </div>
 <script>
@@ -364,6 +462,8 @@ const qInput   = document.getElementById('q');
 const statusEl = document.getElementById('status-bar');
 const cardsEl  = document.getElementById('cards');
 let debounceTimer;
+
+qInput.addEventListener('keydown', e => {{ if (e.key === 'Enter') qInput.blur(); }});
 
 qInput.addEventListener('input', () => {{
   clearTimeout(debounceTimer);
@@ -397,14 +497,14 @@ function render(data) {{
   }}
   statusEl.innerHTML = 'Showing top <strong>' + results.length + '</strong> page(s) matching <strong>&ldquo;' + esc(query) + '&rdquo;</strong>';
   cardsEl.innerHTML = results.map(r => `
-    <div class="card" data-page="${{r.page}}">
+    <div class="card" data-page="${{r.page}}" onclick="openViewer(${{r.page}}, '/${{r.img_path}}')" style="cursor:pointer">
       <div class="card-left">
-        <div class="thumb-wrap" onclick="openViewer(${{r.page}}, '/${{r.img_path}}')">
+        <div class="thumb-wrap">
           <img src="/${{r.img_path}}" alt="Page ${{r.page}}" loading="lazy"
                onerror="this.parentElement.style.display='none'">
         </div>
         <div class="img-links">
-          <a href="/pdf#page=${{r.page}}" target="_blank">PDF &#8599;</a>
+          <a href="/pdf#page=${{r.page}}" target="_blank" onclick="event.stopPropagation()">PDF &#8599;</a>
         </div>
       </div>
       <div class="card-right">
@@ -428,14 +528,136 @@ function esc(s) {{
 }}
 
 let _viewerPage = null;
+let _pdfDoc     = null;
+let _scale      = null;   // null = fit-to-width
+let _fitScale   = 1;
+let _pageEls    = [];     // [{{div, canvas, rendered, rendering}}]
+let _renderObs  = null;
+let _rafId      = null;
 
-function openViewer(page, imgPath) {{
-  if (_viewerPage === page) {{ closeViewer(); return; }}
-  _viewerPage = page;
-  document.getElementById('viewer-frame').src = '/pdf#page=' + page;
-  document.getElementById('viewer-page-badge').textContent = 'Page ' + page;
+async function _loadPdf() {{
+  if (_pdfDoc) return _pdfDoc;
+  _pdfDoc = await pdfjsLib.getDocument('/pdf').promise;
+  return _pdfDoc;
+}}
+
+async function _renderPageEl(pageNum) {{
+  const el = _pageEls[pageNum - 1];
+  if (!el || el.rendering || el.rendered) return;
+  el.rendering = true;
+  try {{
+    const pdf      = await _loadPdf();
+    const pg       = await pdf.getPage(pageNum);
+    const scale    = _scale === null ? _fitScale : _scale;
+    const viewport = pg.getViewport({{scale}});
+    el.canvas.width  = viewport.width;
+    el.canvas.height = viewport.height;
+    await pg.render({{canvasContext: el.canvas.getContext('2d'), viewport}}).promise;
+    el.rendered = true;
+  }} catch(e) {{
+    if (e && e.name !== 'RenderingCancelledException') console.error(e);
+  }} finally {{
+    el.rendering = false;
+  }}
+}}
+
+async function _initScrollViewer(scrollToPage) {{
+  const loading = document.getElementById('viewer-loading');
+  loading.style.display = 'block';
+  try {{
+    const pdf  = await _loadPdf();
+    const wrap = document.getElementById('viewer-canvas-wrap');
+    const firstPg = await pdf.getPage(1);
+    const natVp   = firstPg.getViewport({{scale: 1}});
+    _fitScale     = wrap.clientWidth / natVp.width;
+    const scale   = _scale === null ? _fitScale : _scale;
+    const pgW     = Math.floor(natVp.width  * scale);
+    const pgH     = Math.floor(natVp.height * scale);
+    const stride  = pgH + 12;  // page height + top/bottom margin (6px each)
+
+    if (_renderObs) {{ _renderObs.disconnect(); _renderObs = null; }}
+    wrap.innerHTML = '';
+    _pageEls = [];
+
+    const frag = document.createDocumentFragment();
+    for (let i = 1; i <= pdf.numPages; i++) {{
+      const div    = document.createElement('div');
+      div.className = 'pdf-page';
+      div.id        = 'pdf-p' + i;
+      div.style.width  = pgW + 'px';
+      div.style.height = pgH + 'px';
+      const canvas = document.createElement('canvas');
+      div.appendChild(canvas);
+      frag.appendChild(div);
+      _pageEls.push({{div, canvas, rendered: false, rendering: false}});
+    }}
+    wrap.appendChild(frag);
+
+    _updateZoomLabel();
+    document.getElementById('viewer-page-badge').textContent =
+      (scrollToPage || 1) + ' / ' + pdf.numPages;
+    document.getElementById('btn-prev').disabled = ((scrollToPage || 1) <= 1);
+    document.getElementById('btn-next').disabled = ((scrollToPage || 1) >= pdf.numPages);
+
+    if (scrollToPage && scrollToPage > 1) {{
+      wrap.scrollTop = (scrollToPage - 1) * stride;
+    }}
+
+    _renderObs = new IntersectionObserver(entries => {{
+      entries.forEach(e => {{
+        if (e.isIntersecting) _renderPageEl(parseInt(e.target.id.slice(5)));
+      }});
+    }}, {{root: wrap, rootMargin: '400px 0px', threshold: 0}});
+    _pageEls.forEach(({{div}}) => _renderObs.observe(div));
+
+    wrap.onscroll = () => {{
+      if (_rafId) return;
+      _rafId = requestAnimationFrame(() => {{
+        _rafId = null;
+        const mid     = wrap.scrollTop + wrap.clientHeight / 2;
+        const pageNum = Math.min(pdf.numPages, Math.max(1, Math.floor(mid / stride) + 1));
+        if (pageNum === _viewerPage) return;
+        _viewerPage = pageNum;
+        document.getElementById('viewer-page-badge').textContent = pageNum + ' / ' + pdf.numPages;
+        document.getElementById('btn-prev').disabled = (pageNum <= 1);
+        document.getElementById('btn-next').disabled = (pageNum >= pdf.numPages);
+        document.getElementById('viewer-pdf-link').href = '/pdf#page=' + pageNum;
+        document.querySelectorAll('.card-active').forEach(el => el.classList.remove('card-active'));
+        const card = document.querySelector('.card[data-page="' + pageNum + '"]');
+        if (card) card.classList.add('card-active');
+      }});
+    }};
+  }} finally {{
+    loading.style.display = 'none';
+  }}
+}}
+
+function _updateZoomLabel() {{
+  const el = document.getElementById('viewer-zoom-label');
+  if (el) el.textContent = _scale === null ? 'fit' : Math.round((_scale / _fitScale) * 100) + '%';
+}}
+
+function _scrollToPage(page, smooth) {{
+  const wrap = document.getElementById('viewer-canvas-wrap');
+  if (!wrap || !_pageEls.length) return;
+  const stride = _pageEls[0].div.offsetHeight + 12;
+  const top    = (page - 1) * stride;
+  if (smooth) wrap.scrollTo({{top, behavior: 'smooth'}});
+  else        wrap.scrollTop = top;
+}}
+
+async function openViewer(page, imgPath) {{
+  const panel = document.getElementById('viewer-panel');
+  if (panel.classList.contains('open') && _viewerPage === page) {{ closeViewer(); return; }}
+  panel.classList.add('open');
   document.getElementById('viewer-pdf-link').href = '/pdf#page=' + page;
-  document.getElementById('viewer-panel').classList.add('open');
+  if (_pageEls.length === 0) {{
+    _viewerPage = page;
+    await _initScrollViewer(page);
+  }} else {{
+    _viewerPage = page;
+    _scrollToPage(page, false);
+  }}
   document.querySelectorAll('.card-active').forEach(el => el.classList.remove('card-active'));
   const card = document.querySelector('.card[data-page="' + page + '"]');
   if (card) card.classList.add('card-active');
@@ -444,11 +666,63 @@ function openViewer(page, imgPath) {{
 function closeViewer() {{
   _viewerPage = null;
   document.getElementById('viewer-panel').classList.remove('open');
-  document.getElementById('viewer-frame').src = '';
   document.querySelectorAll('.card-active').forEach(el => el.classList.remove('card-active'));
 }}
 
-document.addEventListener('keydown', e => {{ if (e.key === 'Escape') closeViewer(); }});
+function prevPage() {{
+  if (!_viewerPage || _viewerPage <= 1) return;
+  _scrollToPage(_viewerPage - 1, true);
+}}
+
+async function nextPage() {{
+  if (!_viewerPage) return;
+  const pdf = await _loadPdf();
+  if (_viewerPage >= pdf.numPages) return;
+  _scrollToPage(_viewerPage + 1, true);
+}}
+
+async function zoomIn() {{
+  const cur = _viewerPage || 1;
+  if (_scale === null) _scale = _fitScale;
+  _scale = Math.min(_scale * 1.25, _fitScale * 5);
+  await _initScrollViewer(cur);
+}}
+
+async function zoomOut() {{
+  const cur = _viewerPage || 1;
+  if (_scale === null) _scale = _fitScale;
+  _scale = Math.max(_scale / 1.25, _fitScale * 0.2);
+  await _initScrollViewer(cur);
+}}
+
+async function zoomFit() {{
+  _scale = null;
+  await _initScrollViewer(_viewerPage || 1);
+}}
+
+function toggleFullscreen() {{
+  const panel = document.getElementById('viewer-panel');
+  if (!document.fullscreenElement) {{
+    panel.requestFullscreen && panel.requestFullscreen();
+  }} else {{
+    document.exitFullscreen && document.exitFullscreen();
+  }}
+}}
+
+document.addEventListener('fullscreenchange', () => {{
+  const btn = document.getElementById('btn-fs');
+  if (btn) btn.textContent = document.fullscreenElement ? '⧅' : '⛶';
+}});
+
+document.addEventListener('keydown', e => {{
+  if (!document.getElementById('viewer-panel').classList.contains('open')) return;
+  if      (e.key === 'Escape')                                closeViewer();
+  else if (e.key === 'ArrowLeft'  || e.key === 'ArrowUp')    prevPage();
+  else if (e.key === 'ArrowRight' || e.key === 'ArrowDown')  nextPage();
+  else if (e.key === '+' || e.key === '=')                   zoomIn();
+  else if (e.key === '-')                                    zoomOut();
+  else if (e.key === 'f' || e.key === 'F')                   toggleFullscreen();
+}});
 
 async function askAI() {{
   const q = qInput.value.trim();
@@ -661,4 +935,4 @@ def search():
 
 if __name__ == "__main__":
     print("Starting server at http://localhost:5000")
-    app.run(debug=False, port=5000, threaded=True)
+    app.run(debug=False, host="0.0.0.0", port=5000, threaded=True)

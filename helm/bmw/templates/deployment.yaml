@@ -1,0 +1,41 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: bmw
+  labels:
+    app: bmw
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: bmw
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: bmw
+    spec:
+      containers:
+        - name: bmw
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - containerPort: 5000
+              protocol: TCP
+          env:
+            - name: PAGES_DIR
+              value: /mnt/data/pages
+            - name: PDF_PATH
+              value: "/mnt/data/BMW - E36 - 3 Series Service Manual (1992 - 1998) EN.pdf"
+          volumeMounts:
+            - name: data
+              mountPath: /mnt/data
+              readOnly: true
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+      volumes:
+        - name: data
+          hostPath:
+            path: {{ .Values.data.hostPath }}
+            type: Directory

@@ -1,0 +1,12 @@
+pages/
+*.pdf
+__pycache__/
+*.pyc
+.env
+.git/
+.gitignore
+.claude/
+results.html
+benchmark.py
+clean_index.py
+index.py

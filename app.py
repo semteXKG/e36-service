@@ -36,7 +36,8 @@ from query import tokenize, make_excerpt, highlight, clean_text, CSS, compute_ta
 BASE_DIR   = pathlib.Path(__file__).parent.resolve()
 INDEX_PATH = BASE_DIR / "index.json"
 TAGS_PATH  = BASE_DIR / "tags.json"
-PDF_PATH   = BASE_DIR / "BMW - E36 - 3 Series Service Manual (1992 - 1998) EN.pdf"
+PDF_PATH   = pathlib.Path(os.environ.get("PDF_PATH",  BASE_DIR / "BMW - E36 - 3 Series Service Manual (1992 - 1998) EN.pdf"))
+PAGES_DIR  = pathlib.Path(os.environ.get("PAGES_DIR", BASE_DIR / "pages"))
 DEFAULT_TOP = 10
 
 # ── Load index once at startup ────────────────────────────────────────────────
@@ -826,7 +827,7 @@ def favicon():
 
 @app.route("/pages/<path:filename>")
 def serve_page_image(filename):
-    return send_from_directory(BASE_DIR / "pages", filename)
+    return send_from_directory(PAGES_DIR, filename)
 
 
 @app.route("/pdf")

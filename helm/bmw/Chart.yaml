@@ -1,0 +1,6 @@
+apiVersion: v2
+name: bmw
+description: BMW E36 Service Manual search app
+type: application
+version: 0.1.0
+appVersion: "1.0.0"

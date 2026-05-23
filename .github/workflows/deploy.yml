@@ -1,0 +1,38 @@
+name: Build and Deploy
+
+on:
+  push:
+    branches: [master]
+
+env:
+  IMAGE: ghcr.io/semteXKG/e36-service
+
+jobs:
+  build-deploy:
+    runs-on: arc-runner
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log in to GHCR
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+
+      - name: Build and push image
+        run: |
+          TAG=${GITHUB_SHA::7}
+          docker build -t $IMAGE:$TAG .
+          docker push $IMAGE:$TAG
+          echo "TAG=$TAG" >> $GITHUB_ENV
+
+      - name: Install Helm
+        run: curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+
+      - name: Deploy with Helm
+        run: |
+          helm upgrade --install bmw ./helm/bmw \
+            --set image.tag=$TAG \
+            --namespace default \
+            --wait --timeout 120s

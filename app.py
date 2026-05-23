@@ -31,7 +31,7 @@ try:
 except ImportError:
     sys.exit("ERROR: rank-bm25 not installed.\nRun: pip install rank-bm25")
 
-from query import tokenize, make_excerpt, highlight, CSS, compute_tag_score, TAG_BOOST, compute_phrase_bonus, deduplicate_by_chapter
+from query import tokenize, make_excerpt, highlight, clean_text, CSS, compute_tag_score, TAG_BOOST, compute_phrase_bonus, deduplicate_by_chapter
 
 BASE_DIR   = pathlib.Path(__file__).parent.resolve()
 INDEX_PATH = BASE_DIR / "index.json"
@@ -48,6 +48,8 @@ print("Loading index...", end=" ", flush=True)
 with open(INDEX_PATH, encoding="utf-8") as f:
     _data = json.load(f)
 _records = _data["records"]
+for _r in _records:
+    _r["text"] = clean_text(_r["text"])
 _corpus  = [tokenize(r["text"]) for r in _records]
 _bm25    = BM25Okapi(_corpus)
 print(f"done ({len(_records)} pages indexed)")
@@ -404,12 +406,22 @@ HTML_PAGE = f"""<!DOCTYPE html>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>BMW E36 &mdash; Service Manual Search</title>
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
+<link rel="apple-touch-icon" href="/favicon.svg">
 <style>{CSS}{_EXTRA_CSS}</style>
 <script src="https://cdn.jsdelivr.net/npm/marked@14/marked.min.js"
         integrity="sha384-lqPzN0kmFw9t2syAMwVPM4VbAyqsz/lPyYWbb2Xt6nSPM0WPNrpSWCUBgdcAdgnC"
-        crossorigin="anonymous"></script>
+        crossorigin="anonymous"
+        onerror="window._markedFailed=true"></script>
+<script src="https://cdn.jsdelivr.net/npm/dompurify@3/dist/purify.min.js"></script>
 <script>
-marked.use({{ walkTokens(token) {{ if (token.type === 'html') {{ token.text = ''; token.raw = ''; }} }} }});
+if (!window._markedFailed) {{
+  marked.use({{ mangle: false, headerIds: false }});
+}}
+function renderMarkdown(text) {{
+  if (window._markedFailed || typeof marked === 'undefined') return '<pre>' + text.replace(/</g,'&lt;') + '</pre>';
+  return DOMPurify.sanitize(marked.parse(text));
+}}
 </script>
 <script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js"></script>
 <script>
@@ -716,12 +728,12 @@ document.addEventListener('fullscreenchange', () => {{
 
 document.addEventListener('keydown', e => {{
   if (!document.getElementById('viewer-panel').classList.contains('open')) return;
-  if      (e.key === 'Escape')                                closeViewer();
-  else if (e.key === 'ArrowLeft'  || e.key === 'ArrowUp')    prevPage();
-  else if (e.key === 'ArrowRight' || e.key === 'ArrowDown')  nextPage();
-  else if (e.key === '+' || e.key === '=')                   zoomIn();
-  else if (e.key === '-')                                    zoomOut();
-  else if (e.key === 'f' || e.key === 'F')                   toggleFullscreen();
+  if      (e.key === 'Escape')                                {{ closeViewer(); }}
+  else if (e.key === 'ArrowLeft'  || e.key === 'ArrowUp')    {{ e.preventDefault(); prevPage(); }}
+  else if (e.key === 'ArrowRight' || e.key === 'ArrowDown')  {{ e.preventDefault(); nextPage(); }}
+  else if (e.key === '+' || e.key === '=')                   {{ zoomIn(); }}
+  else if (e.key === '-')                                    {{ zoomOut(); }}
+  else if (e.key === 'f' || e.key === 'F')                   {{ toggleFullscreen(); }}
 }});
 
 async function askAI() {{
@@ -754,7 +766,7 @@ async function askAI() {{
         if (msg.type === 'chunk') {{
           if (!buffer) textEl.style.color = '';
           buffer += msg.text;
-          textEl.innerHTML = marked.parse(buffer);
+          textEl.innerHTML = renderMarkdown(buffer);
         }} else if (msg.type === 'done') {{
           document.getElementById('llm-title').textContent = 'AI Answer — ' + msg.model;
           metaEl.innerHTML = msg.elapsed + 's'
@@ -779,6 +791,22 @@ async function askAI() {{
 </body>
 </html>"""
 
+# ── Favicon ───────────────────────────────────────────────────────────────────
+
+_FAVICON_SVG = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <circle cx="50" cy="50" r="50" fill="#1a1a1a"/>
+  <circle cx="50" cy="50" r="43" fill="white"/>
+  <clipPath id="c"><circle cx="50" cy="50" r="43"/></clipPath>
+  <rect x="7"  y="7"  width="43" height="43" fill="#1C69D4" clip-path="url(#c)"/>
+  <rect x="50" y="50" width="43" height="43" fill="#1C69D4" clip-path="url(#c)"/>
+  <rect x="50" y="7"  width="43" height="43" fill="white"   clip-path="url(#c)"/>
+  <rect x="7"  y="50" width="43" height="43" fill="white"   clip-path="url(#c)"/>
+  <line x1="50" y1="7"  x2="50" y2="93" stroke="#1a1a1a" stroke-width="2"/>
+  <line x1="7"  y1="50" x2="93" y2="50" stroke="#1a1a1a" stroke-width="2"/>
+  <circle cx="50" cy="50" r="43" fill="none" stroke="#c0c0c0" stroke-width="2.5"/>
+  <circle cx="50" cy="50" r="47" fill="none" stroke="#1a1a1a" stroke-width="6"/>
+</svg>"""
+
 # ── Flask app ─────────────────────────────────────────────────────────────────
 
 app = Flask(__name__)
@@ -787,6 +815,13 @@ app = Flask(__name__)
 @app.route("/")
 def index_page():
     return HTML_PAGE
+
+
+@app.route("/favicon.svg")
+@app.route("/favicon.ico")
+def favicon():
+    return Response(_FAVICON_SVG, mimetype="image/svg+xml",
+                    headers={"Cache-Control": "public, max-age=86400"})
 
 
 @app.route("/pages/<path:filename>")
@@ -798,7 +833,7 @@ def serve_page_image(filename):
 def serve_pdf():
     if not PDF_PATH.exists():
         return "PDF not found", 404
-    resp = send_file(PDF_PATH, mimetype="application/pdf")
+    resp = send_file(PDF_PATH, mimetype="application/pdf", conditional=True)
     resp.headers["Cache-Control"] = "public, max-age=86400"
     return resp
 
@@ -901,7 +936,10 @@ def llm_stream():
 @app.route("/search")
 def search():
     q   = request.args.get("q", "").strip()
-    top = min(int(request.args.get("top", DEFAULT_TOP)), 50)
+    try:
+        top = min(int(request.args.get("top", DEFAULT_TOP)), 50)
+    except (ValueError, TypeError):
+        top = DEFAULT_TOP
 
     if not q:
         return jsonify({"query": q, "results": [], "total": 0})
@@ -935,4 +973,10 @@ def search():
 
 if __name__ == "__main__":
     print("Starting server at http://localhost:5000")
-    app.run(debug=False, host="0.0.0.0", port=5000, threaded=True)
+    import argparse as _ap
+    _p = _ap.ArgumentParser()
+    _p.add_argument("--host", default="127.0.0.1")
+    _p.add_argument("--port", type=int, default=5000)
+    _args = _p.parse_args()
+    print(f"Starting server at http://{_args.host}:{_args.port}")
+    app.run(debug=False, host=_args.host, port=_args.port, threaded=True)

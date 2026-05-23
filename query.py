@@ -227,9 +227,10 @@ def make_excerpt(text: str, query_tokens: list, window: int = 400) -> str:
 # ── HTML ──────────────────────────────────────────────────────────────────────
 
 def highlight(text: str, tokens: list) -> str:
-    for tok in sorted(tokens, key=len, reverse=True):
-        text = re.sub(f"(?i)({re.escape(tok)})", r"<mark>\1</mark>", text)
-    return text
+    if not tokens:
+        return text
+    pattern = "|".join(f"(?:{re.escape(t)})" for t in sorted(tokens, key=len, reverse=True))
+    return re.sub(f"(?i)({pattern})", r"<mark>\1</mark>", text)
 
 
 CSS = """

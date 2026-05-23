@@ -1,6 +1,5 @@
 # Generated index, tags, and page images
-index.json
-tags.json
+# index.json and tags.json are committed (needed for Docker build)
 tags_batch_*.json
 pages/
 

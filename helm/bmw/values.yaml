@@ -1,5 +1,5 @@
 image:
-  repository: ghcr.io/semteXKG/e36-service
+  repository: ghcr.io/semtexkg/e36-service
   tag: latest
   pullPolicy: IfNotPresent
 

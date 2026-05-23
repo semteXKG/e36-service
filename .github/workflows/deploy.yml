@@ -5,7 +5,7 @@ on:
     branches: [master]
 
 env:
-  IMAGE: ghcr.io/semteXKG/e36-service
+  IMAGE: ghcr.io/semtexkg/e36-service
 
 jobs:
   build:
